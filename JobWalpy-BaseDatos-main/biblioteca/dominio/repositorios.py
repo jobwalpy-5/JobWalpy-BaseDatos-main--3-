@@ -15,6 +15,7 @@ import json
 import psycopg
 
 from dominio.errores import (
+    DocumentoYaRegistradoError,
     EmailYaRegistradoError,
     TaxIdYaRegistradoError,
     YaAplicasteError,
@@ -116,6 +117,19 @@ def obtener_credenciales(email: str) -> dict | None:
         ).fetchone()
 
 
+def existe_documento(document_type: str, document_number: str) -> bool:
+    """Compara documentos normalizados; el índice UNIQUE es la defensa final."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT 1 FROM perfiles_buscador
+               WHERE upper(tipo_documento) = upper(%s)
+                 AND upper(regexp_replace(documento_numero, '[ .-]', '', 'g')) = upper(regexp_replace(%s, '[ .-]', '', 'g'))
+               LIMIT 1""",
+            (document_type.strip().upper(), document_number.strip().upper()),
+        ).fetchone()
+    return row is not None
+
+
 def insertar_buscador(*, uid, email, password_hash, verificado, fecha_registro,
                       data, avatar, color) -> None:
     with get_conn() as conn:
@@ -131,13 +145,18 @@ def insertar_buscador(*, uid, email, password_hash, verificado, fecha_registro,
             # registros llegan casi al mismo tiempo, solo el UNIQUE de la
             # tabla puede detectarlo con certeza.
             raise EmailYaRegistradoError(f"El correo {email} ya está registrado.")
-        conn.execute(
-            "INSERT INTO perfiles_buscador "
-            "(usuario_id, nombre, telefono, ubicacion, bio, skills, experiencia, educacion, cv_url, avatar, avatar_color) "
-            "VALUES (%s, %s, %s, %s, %s, '[]', '', '', '', %s, %s)",
-            (uid, data["name"], data.get("phone", ""), data.get("location", ""),
-             data.get("bio", ""), avatar, color),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO perfiles_buscador "
+                "(usuario_id, nombre, telefono, ubicacion, bio, skills, experiencia, educacion, cv_url, avatar, avatar_color, tipo_documento, documento_numero) "
+                "VALUES (%s, %s, %s, %s, %s, '[]', '', '', '', %s, %s, %s, %s)",
+                (uid, data["name"], data.get("phone", ""), data.get("location", ""),
+                 data.get("bio", ""), avatar, color, data.get("document_type"), data.get("document_number")),
+            )
+        except psycopg.errors.UniqueViolation as exc:
+            if getattr(exc.diag, "constraint_name", "") == "uq_perfiles_buscador_documento":
+                raise DocumentoYaRegistradoError("Este documento ya está asociado a una cuenta.") from exc
+            raise
 
 
 def insertar_empleador(*, uid, email, password_hash, verificado, verificado_legal,

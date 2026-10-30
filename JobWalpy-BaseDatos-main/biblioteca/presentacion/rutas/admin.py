@@ -16,6 +16,7 @@ Seguridad (igual que antes, más una capa):
 Niveles:  soporte (solo mirar) · moderador (gestionar) · super_admin (borrar).
 """
 import json
+import os
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -36,6 +37,7 @@ def iniciar_sesion_admin(response, admin_id: str) -> None:
         key=NOMBRE_COOKIE, value=sesion_admin.firmar(admin_id),
         max_age=sesion_admin.DURACION_SEGUNDOS,
         httponly=True, samesite="lax", path="/",
+        secure=os.environ.get("COOKIE_SECURE", "0" if os.environ.get("ENVIRONMENT") == "development" else "1") == "1",
     )
 
 

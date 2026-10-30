@@ -13,6 +13,7 @@ import hashlib
 from dominio import datos_demo
 from dominio import repositorios as repo
 from dominio.errores import (  # noqa: F401  (se re-exportan para que las rutas los importen desde aquí)
+    DocumentoYaRegistradoError,
     EmailYaRegistradoError,
     TaxIdYaRegistradoError,
     YaAplicasteError,
@@ -70,6 +71,14 @@ def create_buscador(data: dict) -> dict:
     if repo.existe_email(email):
         raise EmailYaRegistradoError(f"El correo {data['email']} ya está registrado.")
 
+    if data.get("document_type") and data.get("document_number") and repo.existe_documento(
+        data["document_type"], data["document_number"]
+    ):
+        raise DocumentoYaRegistradoError("Este documento ya está asociado a una cuenta.")
+    data = {
+        **data,
+        "name": data.get("name") or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip(),
+    }
     avatar, color = _avatar_para(data["name"], repo.contar_usuarios())
     uid = new_id()
     repo.insertar_buscador(

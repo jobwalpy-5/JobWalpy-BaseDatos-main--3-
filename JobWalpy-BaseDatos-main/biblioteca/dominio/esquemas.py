@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import date
 import re
@@ -17,6 +17,8 @@ def validar_password_fuerte(v: str) -> str:
     """Regla única de contraseña fuerte, reutilizada por buscadores y empleadores."""
     if len(v) < 8:
         raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+    if len(v) > 128:
+        raise ValueError("La contraseña no puede superar 128 caracteres.")
     if not re.search(r"[A-Z]", v):
         raise ValueError("La contraseña debe tener al menos una mayúscula.")
     if not re.search(r"\d", v):
@@ -30,12 +32,39 @@ def validar_password_fuerte(v: str) -> str:
 
 class BuscadorCreate(BaseModel):
     """Registro de una persona que busca empleo."""
-    name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     password: str
-    phone: Optional[str] = ""
-    location: Optional[str] = ""
-    bio: Optional[str] = ""
+    document_type: str
+    document_number: str
+    phone: Optional[str] = Field(default="", max_length=30)
+    location: Optional[str] = Field(default="", max_length=100)
+    bio: Optional[str] = Field(default="", max_length=1000)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def validate_person_name(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not v or len(v) > 60 or not re.fullmatch(r"[A-Za-zÀ-ÿ'’ -]+", v, flags=re.UNICODE):
+            raise ValueError("Usa solo letras, espacios, apóstrofes o guiones (máximo 60) en nombres y apellidos.")
+        return v
+
+    @field_validator("document_type")
+    @classmethod
+    def validate_document_type(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in {"CC", "CE", "PPT", "PASAPORTE"}:
+            raise ValueError("Selecciona un tipo de documento válido.")
+        return v
+
+    @field_validator("document_number")
+    @classmethod
+    def normalize_document_number(cls, v: str) -> str:
+        v = re.sub(r"[ .-]", "", v.strip()).upper()
+        if not re.fullmatch(r"[A-Z0-9]{5,20}", v):
+            raise ValueError("El documento debe tener entre 5 y 20 caracteres alfanuméricos.")
+        return v
 
     @field_validator("password")
     @classmethod

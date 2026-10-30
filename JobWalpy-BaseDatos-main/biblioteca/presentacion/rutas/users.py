@@ -31,7 +31,7 @@ async def login_page(request: Request, next: str = "/"):
    
 
 @router.post("/login")
-async def login(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form(default="/")):
+def login(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form(default="/")):
 
 
 
@@ -61,10 +61,11 @@ async def register_page(request: Request):
 
 
 @router.post("/register")
-async def register(
+def register(
     request: Request,
-    name: str = Form(...), email: str = Form(...),
-    password: str = Form(...), role: str = Form(...),
+    email: str = Form(...), password: str = Form(...), role: str = Form(...),
+    first_name: str = Form(default=""), last_name: str = Form(default=""),
+    document_type: str = Form(default=""), document_number: str = Form(default=""),
     location: str = Form(default=""), bio: str = Form(default="")
 ):
     if not permitir_intento(request, "register", 5, 3600):
@@ -77,16 +78,26 @@ async def register(
     # Validar con el mismo modelo que usa el resto de la app (pydantic),
     # así el mensaje de error es siempre el mismo sin importar por dónde entre el dato.
     try:
-        BuscadorCreate(name=name, email=email, password=password, location=location, bio=bio)
+        validated = BuscadorCreate(first_name=first_name, last_name=last_name, email=email, password=password,
+                                   document_type=document_type, document_number=document_number,
+                                   location=location, bio=bio)
+        first_name, last_name = validated.first_name, validated.last_name
+        document_type, document_number = validated.document_type, validated.document_number
+        email = str(validated.email)
     except ValidationError as e:
         return templates.TemplateResponse(request=request, name="register.html",
-            context={"error": e.errors()[0]["msg"]})
+            context={"error": e.errors()[0]["msg"].replace("Value error, ", "")})
 
     try:
         user = db.create_buscador({
-            "name": name, "email": email, "password": password,
-            "location": location, "bio": bio,
+            "name": f"{first_name} {last_name}".strip(),
+            "first_name": first_name, "last_name": last_name,
+            "document_type": document_type, "document_number": document_number,
+            "email": email, "password": password, "location": location, "bio": bio,
         })
+    except db.DocumentoYaRegistradoError:
+        return templates.TemplateResponse(request=request, name="register.html",
+            context={"error": "Este documento ya está asociado a una cuenta."})
     except db.EmailYaRegistradoError:
         return templates.TemplateResponse(request=request, name="register.html",
             context={"error": "Este correo ya está registrado"})
@@ -149,18 +160,13 @@ async def register_employer(
         return templates.TemplateResponse(request=request, name="register_employer.html",
             context={"errors": errors, "form": form_data})
 
-    # Guardar el documento de verificación (Cámara de Comercio) si lo subieron.
+    # No guardar documentos legales en /static: ese directorio es público.
+    # Hasta configurar almacenamiento privado, no se aceptan cargas de archivos.
     doc_relpath = ""
     if document and document.filename:
-        safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", document.filename)
-        upload_dir = DIR_STATIC / "uploads" / "docs"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        clean_tax_id = re.sub(r"[^a-zA-Z0-9]", "", tax_id)
-        stored_name = f"{clean_tax_id}_{safe_name}"
-        content = await document.read()
-        with open(upload_dir / stored_name, "wb") as f:
-            f.write(content)
-        doc_relpath = f"docs/{stored_name}"
+        return templates.TemplateResponse(request=request, name="register_employer.html",
+            context={"errors": ["La carga de documentos está temporalmente deshabilitada hasta configurar almacenamiento privado seguro. Registra la empresa sin adjuntar el archivo y completa la verificación después."],
+                     "form": form_data})
 
     try:
         user = db.create_empleador({

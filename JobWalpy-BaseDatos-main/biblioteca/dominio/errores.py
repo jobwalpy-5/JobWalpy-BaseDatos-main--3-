@@ -15,5 +15,9 @@ class TaxIdYaRegistradoError(Exception):
     """Se lanza cuando el NIT/RUT/RFC de la empresa ya está registrado por otra cuenta."""
 
 
+class DocumentoYaRegistradoError(Exception):
+    """Se lanza cuando el documento de identidad ya pertenece a una cuenta."""
+
+
 class YaAplicasteError(Exception):
     """Se lanza si la misma persona intenta aplicar dos veces al mismo empleo."""
